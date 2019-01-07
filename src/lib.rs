@@ -1,4 +1,6 @@
+use nix::unistd::{execv, fork, getpid, ForkResult};
 use std::cmp::Ordering;
+use std::ffi::{CStr, CString};
 use std::thread;
 use std::time;
 
@@ -6,15 +8,23 @@ use std::time;
 pub struct Job {
     prev: time::SystemTime,
     cmd: String,
+    params: Vec<CString>,
     next: time::SystemTime,
 }
 
 impl Job {
     pub fn new(c: String, t: time::SystemTime) -> Self {
+        // Build params
+        let mut p: Vec<CString> = vec![];
+        for a in c.split(' ') {
+            p.push(CString::new(a).unwrap());
+        }
+
         Job {
             prev: time::SystemTime::now(),
             cmd: c,
             next: t,
+            params: p,
         }
     }
 }
@@ -63,7 +73,7 @@ impl EventQueue {
     }
 
     pub fn enqueue(&mut self, j: Job) {
-        let t = j.next.clone();
+        let t = j.next;
 
         if self.queue.is_empty() {
             let mut e = Event::new(t);
@@ -134,10 +144,10 @@ impl Cron {
         let t3 = t2 + d * 4;
         let t4 = t2;
 
-        let j1 = Job::new("Job 1".to_string(), t1);
-        let j2 = Job::new("Job 2".to_string(), t2);
-        let j3 = Job::new("Job 3".to_string(), t3);
-        let j4 = Job::new("Job 4".to_string(), t4);
+        let j1 = Job::new("/usr/bin/touch /tmp/1".to_string(), t1);
+        let j2 = Job::new("/usr/bin/touch /tmp/2".to_string(), t2);
+        let j3 = Job::new("/usr/bin/touch /tmp/3".to_string(), t3);
+        let j4 = Job::new("/usr/bin/touch /tmp/4".to_string(), t4);
 
         self.job_list.enqueue(j1);
         self.job_list.enqueue(j2);
@@ -164,22 +174,41 @@ impl Cron {
             let e = match self.job_list.dequeue() {
                 Some(e) => e,
                 None => {
-                    println!("Failed to dequeue element");
+                    eprintln!("Failed to dequeue element");
                     continue;
                 }
             };
 
-            // 4. TODO: fork process
-            // 5. TODO: execve job on forked process
-
             for j in e.jobs {
-                println!("Job {} exec at time {:?}", j.cmd, j.next);
-                let mut j_new = Job::new(j.cmd, j.next + time::Duration::new(120, 0));
-                j_new.prev = j.next;
-                self.job_list.enqueue(j_new);
-            }
+                // 4. fork process
+                match fork() {
+                    Ok(ForkResult::Child) => {
+                        let path = &j.params[0];
 
-            // 6. goto 1
+                        // 5. execve job on forked process
+                        match execv(path, &j.params[..]) {
+                            Ok(_) => {
+                                println!("Ran job {} in process {}", j.cmd, getpid());
+                            }
+                            Err(err) => {
+                                eprintln!("Failed to execute `{:?}` in pid `{}`: {:?}", path, getpid(), err);
+                            }
+                        }
+                    }
+                    Ok(ForkResult::Parent {child}) => {
+                        println!("Spawned child {}", child);
+
+                        let mut j_new = Job::new(j.cmd, j.next + time::Duration::new(120, 0));
+                        j_new.prev = j.next;
+                        self.job_list.enqueue(j_new);
+
+                        // 6. goto 1
+                        continue;
+                    }
+                    Err(_) => eprintln!("Forking should never fail!!!.
+                    If you are seeing this message, then you have much more serious problems than this server failing."),
+                }
+            }
         }
     }
 }
