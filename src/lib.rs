@@ -1,6 +1,6 @@
 use nix::unistd::{execv, fork, getpid, ForkResult};
 use std::cmp::Ordering;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::thread;
 use std::time;
 
