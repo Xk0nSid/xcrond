@@ -52,7 +52,7 @@ impl Event {
     }
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct EventQueue {
     queue: Vec<Event>,
 }
@@ -62,7 +62,9 @@ impl EventQueue {
         EventQueue { queue: vec![] }
     }
 
-    pub fn enqueue(&mut self, j: Job, t: time::SystemTime) {
+    pub fn enqueue(&mut self, j: Job) {
+        let t = j.next.clone();
+
         if self.queue.is_empty() {
             let mut e = Event::new(t);
             e.jobs.push(j);
@@ -100,7 +102,7 @@ impl EventQueue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct Cron {
     job_list: EventQueue,
     wakeup_after: time::Duration,
@@ -108,9 +110,9 @@ pub struct Cron {
 
 impl Cron {
     // Create a new instance of Cron struct
-    pub fn new() -> Self {
+    pub fn new(e: EventQueue) -> Self {
         Cron {
-            job_list: EventQueue::new(),
+            job_list: e,
             wakeup_after: time::Duration::new(0, 0),
         }
     }
@@ -130,24 +132,27 @@ impl Cron {
         let t1 = time::SystemTime::now() + d;
         let t2 = t1 + d * 2;
         let t3 = t2 + d * 4;
-        let t4 = t2.clone();
+        let t4 = t2;
 
         let j1 = Job::new("Job 1".to_string(), t1);
         let j2 = Job::new("Job 2".to_string(), t2);
         let j3 = Job::new("Job 3".to_string(), t3);
         let j4 = Job::new("Job 4".to_string(), t4);
 
-        self.job_list.enqueue(j1, t1);
-        self.job_list.enqueue(j2, t2);
-        self.job_list.enqueue(j3, t3);
-        self.job_list.enqueue(j4, t4);
+        self.job_list.enqueue(j1);
+        self.job_list.enqueue(j2);
+        self.job_list.enqueue(j3);
+        self.job_list.enqueue(j4);
     }
 
     pub fn run(&mut self) {
         loop {
             // 1. Calculate wakeup after
             let top = self.job_list.top().unwrap();
-            self.wakeup_after = top.time.duration_since(time::SystemTime::now()).expect("sleep time calculation failed");
+            self.wakeup_after = top
+                .time
+                .duration_since(time::SystemTime::now())
+                .expect("sleep time calculation failed");
             self.wakeup_after = time::Duration::new(self.wakeup_after.as_secs(), 0);
 
             println!("Next exec after time {:?}", self.wakeup_after);
@@ -171,7 +176,7 @@ impl Cron {
                 println!("Job {} exec at time {:?}", j.cmd, j.next);
                 let mut j_new = Job::new(j.cmd, j.next + time::Duration::new(120, 0));
                 j_new.prev = j.next;
-                self.job_list.enqueue(j_new, j.next);
+                self.job_list.enqueue(j_new);
             }
 
             // 6. goto 1
@@ -199,17 +204,15 @@ mod tests {
         let j3 = Job::new("Job 3".to_string(), t3);
         let j4 = Job::new("Job 4".to_string(), t4);
 
-
         let mut q = EventQueue::new();
-
 
         assert_eq!(q.queue.is_empty(), true);
 
         // Check enqueue operations
-        q.enqueue(j1, t1);
-        q.enqueue(j2, t2);
-        q.enqueue(j3, t3);
-        q.enqueue(j4, t4);
+        q.enqueue(j1);
+        q.enqueue(j2);
+        q.enqueue(j3);
+        q.enqueue(j4);
 
         // Check Top, Pop operations and ordering of queue
 

@@ -15,7 +15,7 @@ fn main() {
     //    }
     //    Err(_) => eprintln!("Forking should never fail. If you are seeing this message, then you have more serious problems that this program failing."),
     //}
-    let mut c = Cron::new();
+    let mut c = Cron::default();
     c.init();
     c.run();
 }
