@@ -13,17 +13,17 @@ pub struct Job {
 }
 
 impl Job {
-    pub fn new(c: String, t: time::SystemTime) -> Self {
+    pub fn new(cmd: String, next: time::SystemTime) -> Self {
         // Build params
         let mut p: Vec<CString> = vec![];
-        for a in c.split(' ') {
+        for a in cmd.split(' ') {
             p.push(CString::new(a).unwrap());
         }
 
         Job {
+            cmd,
+            next,
             prev: time::SystemTime::now(),
-            cmd: c,
-            next: t,
             params: p,
         }
     }
@@ -73,10 +73,8 @@ impl EventQueue {
     }
 
     pub fn enqueue(&mut self, j: Job) {
-        let t = j.next;
-
         if self.queue.is_empty() {
-            let mut e = Event::new(t);
+            let mut e = Event::new(j.next);
             e.jobs.push(j);
             self.queue.push(e);
         } else {
@@ -84,18 +82,18 @@ impl EventQueue {
             // 1. if event exists in queue, append job(s) from event into existing event
             // 2. else push the event in correct position
 
-            // Note that the binary search is done using t.cmp and not probe.cmp
+            // Note that the binary search is done using j.next.cmp and not probe.cmp
             // This is done because we want the binary search to work in reverse order
-            // rather than traditional order because we are maintainig the dequeue
+            // rather than traditional order because we are maintainig the queue
             // in reverse order
-            match self.queue.binary_search_by(|probe| t.cmp(&probe.time)) {
+            match self.queue.binary_search_by(|probe| j.next.cmp(&probe.time)) {
                 Ok(pos) => {
                     // Already in the vector
                     self.queue[pos].jobs.push(j);
                 }
                 Err(pos) => {
                     // Not in the vector
-                    let mut e = Event::new(t);
+                    let mut e = Event::new(j.next);
                     e.jobs.push(j);
                     self.queue.insert(pos, e);
                 }
@@ -119,7 +117,7 @@ pub struct Cron {
 }
 
 impl Cron {
-    // Create a new instance of Cron struct
+    /// Create a new instance of Cron struct
     pub fn new(e: EventQueue) -> Self {
         Cron {
             job_list: e,
@@ -127,17 +125,17 @@ impl Cron {
         }
     }
 
-    // Initialize the cron instance.
-    // This function reads all schedule files and prepares
-    // all the necessary data structures for proper operations.
-    // Any configuration related work for cron daemon should be done
-    // in this function.
+    /// Initialize the cron instance.
+    /// This function reads all schedule files and prepares
+    /// all the necessary data structures for proper operations.
+    /// Any configuration related work for cron daemon should be done
+    /// in this function.
     pub fn init(&mut self) {
         // 1. TODO: Read cron schedule files
         // 2. TODO: Parse each file
         // 3. TODO: Enqueue jobs in job_list
 
-        let d = time::Duration::new(30, 0); // 1 minutes
+        let d = time::Duration::new(30, 0);
 
         let t1 = time::SystemTime::now() + d;
         let t2 = t1 + d * 2;
@@ -155,6 +153,7 @@ impl Cron {
         self.job_list.enqueue(j4);
     }
 
+    /// This starts the actual cron server
     pub fn run(&mut self) {
         loop {
             // 1. Calculate wakeup after
