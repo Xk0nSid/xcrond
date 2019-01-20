@@ -1,4 +1,7 @@
-use nix::unistd::{execv, fork, getpid, ForkResult};
+use env_logger::{Builder, Target};
+use log::{error, info};
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use nix::unistd::{execv, fork, getpid, ForkResult, Pid};
 use std::cmp::Ordering;
 use std::ffi::CString;
 use std::thread;
@@ -135,6 +138,11 @@ impl Cron {
         // 2. TODO: Parse each file
         // 3. TODO: Enqueue jobs in job_list
 
+        // Initialize logger
+        let mut log_builder = Builder::from_default_env();
+        log_builder.target(Target::Stdout);
+        log_builder.init();
+
         let d = time::Duration::new(30, 0);
 
         let t1 = time::SystemTime::now() + d;
@@ -155,16 +163,28 @@ impl Cron {
 
     /// This starts the actual cron server
     pub fn run(&mut self) {
+        // spawn a thread for reaping zombie processes
+        self.zombie_reaper();
+
         loop {
+            // Check if there is any thing in the queue
+            let top = match self.job_list.top() {
+                Some(t) => t,
+                None => {
+                    // if queue is empty, sleep for a minute and try again
+                    thread::sleep(time::Duration::from_secs(60));
+                    continue;
+                }
+            };
+
             // 1. Calculate wakeup after
-            let top = self.job_list.top().unwrap();
             self.wakeup_after = top
                 .time
                 .duration_since(time::SystemTime::now())
                 .expect("sleep time calculation failed");
             self.wakeup_after = time::Duration::new(self.wakeup_after.as_secs(), 0);
 
-            println!("Next exec after time {:?}", self.wakeup_after);
+            info!("Next exec after time {:?}", self.wakeup_after);
 
             // 2. sleep for wakeup_after duration
             thread::sleep(self.wakeup_after);
@@ -173,7 +193,7 @@ impl Cron {
             let e = match self.job_list.dequeue() {
                 Some(e) => e,
                 None => {
-                    eprintln!("Failed to dequeue element");
+                    error!("Failed to dequeue element");
                     continue;
                 }
             };
@@ -187,15 +207,15 @@ impl Cron {
                         // 5. execve job on forked process
                         match execv(path, &j.params[..]) {
                             Ok(_) => {
-                                println!("Ran job {} in process {}", j.cmd, getpid());
+                                info!("Ran job {} in process {}", j.cmd, getpid());
                             }
                             Err(err) => {
-                                eprintln!("Failed to execute `{:?}` in pid `{}`: {:?}", path, getpid(), err);
+                                error!("Failed to execute `{:?}` in pid `{}`: {:?}", path, getpid(), err);
                             }
                         }
                     }
                     Ok(ForkResult::Parent {child}) => {
-                        println!("Spawned child {}", child);
+                        info!("Spawned child {}", child);
 
                         let mut j_new = Job::new(j.cmd, j.next + time::Duration::new(120, 0));
                         j_new.prev = j.next;
@@ -204,11 +224,40 @@ impl Cron {
                         // 6. goto 1
                         continue;
                     }
-                    Err(_) => eprintln!("Forking should never fail!!!.
+                    Err(_) => error!("Forking should never fail!!!.
                     If you are seeing this message, then you have much more serious problems than this server failing."),
                 }
             }
         }
+    }
+
+    /// zombie_reaper spawns a thread to reap zombie processes
+    fn zombie_reaper(&self) {
+        thread::spawn(|| loop {
+            match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)) {
+                Ok(s) => match s {
+                    WaitStatus::Exited(pid, code) => {
+                        info!("Process {} exited with code {}", pid, code)
+                    }
+                    WaitStatus::Stopped(pid, signal) => {
+                        info!("Process {} stopped by signal {:?}", pid, signal)
+                    }
+                    WaitStatus::Signaled(pid, signal, _) => {
+                        info!("Process {} signaled to stop with {:?}", pid, signal)
+                    }
+                    _ => {
+                        info!("Wait Signal: {:?}", s);
+                        thread::sleep(time::Duration::from_secs(10));
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    info!("Not childs present: {:?}", e);
+                    thread::sleep(time::Duration::from_secs(10));
+                    continue;
+                }
+            }
+        });
     }
 }
 
