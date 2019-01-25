@@ -8,7 +8,10 @@ use std::thread;
 use std::time;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Job {
+pub struct JobSchedule {}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+struct Job {
     prev: time::SystemTime,
     cmd: String,
     params: Vec<CString>,
@@ -33,7 +36,7 @@ impl Job {
 }
 
 #[derive(Debug, Eq, Clone)]
-pub struct Event {
+struct Event {
     time: time::SystemTime,
     pub jobs: Vec<Job>,
 }
@@ -65,8 +68,8 @@ impl Event {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct EventQueue {
+#[derive(Debug)]
+struct EventQueue {
     queue: Vec<Event>,
 }
 
@@ -113,7 +116,7 @@ impl EventQueue {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Cron {
     job_list: EventQueue,
     wakeup_after: time::Duration,
@@ -121,9 +124,9 @@ pub struct Cron {
 
 impl Cron {
     /// Create a new instance of Cron struct
-    pub fn new(e: EventQueue) -> Self {
+    pub fn new() -> Self {
         Cron {
-            job_list: e,
+            job_list: EventQueue::new(),
             wakeup_after: time::Duration::new(0, 0),
         }
     }
