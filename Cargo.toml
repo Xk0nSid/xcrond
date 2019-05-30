@@ -12,3 +12,5 @@ syslog = "^4.0"
 cron = { git = "https://github.com/Xk0nSid/cron" }
 chrono = "0.4.6"
 ctrlc = "3.1.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.8"

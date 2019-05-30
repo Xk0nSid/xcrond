@@ -1,149 +1,20 @@
 #[macro_use]
 extern crate log;
 
-use cron::Schedule;
+mod job;
+mod event;
+
 use chrono::Local;
 use chrono::DateTime;
 use env_logger::{Builder, Target};
 use log::{error, info};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{execv, fork, getpid, ForkResult, Pid};
-use std::cmp::Ordering;
-use std::ffi::CString;
-use std::str::FromStr;
 use std::thread;
 use std::time;
 
-#[derive(Eq, PartialEq, Clone)]
-struct Job {
-    name: String,
-    prev: DateTime<Local>,
-    cmd: String,
-    params: Vec<CString>,
-    schedule: Schedule,
-    expression: String,
-    next: DateTime<Local>,
-}
-
-impl Job {
-    pub fn new(name: String, cmd: String, expr: &str) -> Self {
-        // Build params
-        let mut p: Vec<CString> = vec![];
-        for a in cmd.split(' ') {
-            p.push(CString::new(a).unwrap());
-        }
-
-        let schedule = Schedule::from_str(expr).unwrap();
-        let next = schedule.upcoming(Local).next().unwrap();
-
-        Job {
-            name,
-            cmd,
-            next,
-            expression: expr.to_string(),
-            schedule: schedule,
-            prev: Local::now(),
-            params: p,
-        }
-    }
-}
-
-impl std::fmt::Debug for Job {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Job: {} ({})", self.name, self.next)
-    }
-}
-
-#[derive(Eq, Clone)]
-struct Event {
-    time: DateTime<Local>,
-    jobs: Vec<Job>,
-}
-
-impl std::fmt::Debug for Event {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Time: {} -> Jobs: {:?}", self.time, self.jobs)
-    }
-}
-
-impl Ord for Event {
-    fn cmp(&self, other: &Event) -> Ordering {
-        self.time.cmp(&other.time)
-    }
-}
-
-impl PartialOrd for Event {
-    fn partial_cmp(&self, other: &Event) -> Option<Ordering> {
-        Some(self.cmp(&other))
-    }
-}
-
-impl PartialEq for Event {
-    fn eq(&self, other: &Event) -> bool {
-        self.time == other.time
-    }
-}
-
-impl Event {
-    pub fn new(t: DateTime<Local>) -> Self {
-        Event {
-            time: t,
-            jobs: vec![],
-        }
-    }
-
-    pub fn push_job(&mut self, j: Job) {
-        self.jobs.push(j)
-    }
-}
-
-struct EventQueue {
-    queue: Vec<Event>,
-}
-
-impl EventQueue {
-    pub fn new() -> Self {
-        EventQueue { queue: vec![] }
-    }
-
-    pub fn enqueue(&mut self, j: Job) {
-        if self.queue.is_empty() {
-            let mut e = Event::new(j.next);
-            e.jobs.push(j);
-            self.queue.push(e);
-        } else {
-            // Algorithm for enqueuing
-            // 1. if event exists in queue, append job(s) from event into existing event
-            // 2. else push the event in correct position
-
-            // Note that the binary search is done using j.next.cmp and not probe.cmp
-            // This is done because we want the binary search to work in reverse order
-            // rather than traditional order because we are maintainig the queue
-            // in reverse order
-            match self.queue.binary_search_by(|probe| j.next.cmp(&probe.time)) {
-                Ok(pos) => {
-                    // Already in the vector
-                    self.queue[pos].push_job(j);
-                }
-                Err(pos) => {
-                    // Not in the vector
-                    let mut e = Event::new(j.next);
-                    e.push_job(j);
-                    self.queue.insert(pos, e);
-                }
-            }
-        }
-    }
-
-    pub fn dequeue(&mut self) -> Option<Event> {
-        self.queue.pop()
-    }
-
-    pub fn debug_print(&self) {
-        // print queue for debugging purpose
-        debug!("Queue: {:?}", self.queue);
-    }
-}
+use job::Job;
+use event::EventQueue;
 
 pub struct Cron {
     job_list: EventQueue,
@@ -213,10 +84,10 @@ impl Cron {
             };
 
             // 1. Calculate wakeup after
-            let wakeup_after = match top.time.signed_duration_since(Local::now()).to_std() {
+            let wakeup_after = match top.get_time().signed_duration_since(Local::now()).to_std() {
                 Ok(t) => t,
                 Err(err) => {
-                    error!("Failed to calculate time difference for time {}: {}", top.time, err);
+                    error!("Failed to calculate time difference for time {}: {}", top.get_time(), err);
                     thread::sleep(time::Duration::from_secs(60));
                     continue;
                 }
@@ -228,16 +99,16 @@ impl Cron {
             // 2. sleep for wakeup_after duration
             thread::sleep(self.wakeup_after);
 
-            for j in top.jobs {
+            for j in top.get_jobs() {
                 // 4. fork process
                 match fork() {
                     Ok(ForkResult::Child) => {
-                        let path = &j.params[0];
+                        let path = &j.get_params()[0];
 
                         // 5. execve job on forked process
-                        match execv(path, &j.params[..]) {
+                        match execv(path, &j.get_params()[..]) {
                             Ok(_) => {
-                                info!("Ran job {} in process {}", j.name, getpid());
+                                info!("Ran job {} in process {}", j.get_name(), getpid());
                             }
                             Err(err) => {
                                 error!("Failed to execute `{:?}` in pid `{}`: {:?}", path, getpid(), err);
@@ -245,19 +116,19 @@ impl Cron {
                         }
                     }
                     Ok(ForkResult::Parent {child}) => {
-                        info!("Spawned child {} for job {}", child, j.name);
+                        info!("Spawned child {} for job {}", child, j.get_name());
 
-                        if !j.schedule.upcoming(Local).peekable().peek().is_some() {
-                            info!("Job Schedule Finished: {:?}", j.name);
+                        if !j.get_schedule().upcoming(Local).peekable().peek().is_some() {
+                            info!("Job Schedule Finished: {:?}", j.get_name());
                             continue;
                         }
 
                         // Requeue /w new `next`
                         let mut j_new = j.clone();
-                        j_new.prev = j.next;
+                        j_new.set_prev(j.get_next());
                         // In theory this unwrap should not fail because we peek into the iterator above
                         // and if it's empty we continue the loop without requeueing
-                        j_new.next = j.schedule.after(&DateTime::from(time::SystemTime::now() + time::Duration::from_secs(1))).next().unwrap();
+                        j_new.set_next(j.get_schedule().after(&DateTime::from(time::SystemTime::now() + time::Duration::from_secs(1))).next().unwrap());
                         debug!("New Job: {:?}", j_new);
                         self.job_list.enqueue(j_new);
                     }
@@ -295,16 +166,5 @@ impl Cron {
                 }
             }
         });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    /// This is base test for the queue that we use as core of the cron
-    /// If this passes, it means the core data structure and it's operations
-    /// are performed successfully
-    fn enqueue_basic_functionality() {
     }
 }
