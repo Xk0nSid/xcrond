@@ -52,10 +52,12 @@ impl Cron {
         let j1 = Job::new("Job 1".to_string(), "/usr/bin/touch /tmp/1".to_string(), "@minute");
         let j2 = Job::new("Job 2".to_string(), "/usr/bin/touch /tmp/2".to_string(), "0 0/2 * * * *");
         let j3 = Job::new("Job 3".to_string(), "/usr/bin/touch /tmp/3".to_string(), "0 0/3 * * * *");
+        let j4 = Job::new("Job 4".to_string(), "/usr/bin/touch /tmp/4".to_string(), "0 58 17 30 May Thu 2019");
 
         self.job_list.enqueue(j1);
         self.job_list.enqueue(j2);
         self.job_list.enqueue(j3);
+        self.job_list.enqueue(j4);
     }
 
     /// This starts the actual cron server
@@ -111,7 +113,9 @@ impl Cron {
                     Ok(ForkResult::Parent {child}) => {
                         info!("Spawned child {} for job {}", child, j.get_name());
 
-                        if !j.get_schedule().upcoming(Local).peekable().peek().is_some() {
+                        let time_diff = DateTime::from(time::SystemTime::now() + time::Duration::from_secs(1));
+
+                        if !j.get_schedule().after(&time_diff).peekable().peek().is_some() {
                             info!("Job Schedule Finished: {:?}", j.get_name());
                             continue;
                         }
@@ -119,9 +123,8 @@ impl Cron {
                         // Requeue /w new `next`
                         let mut j_new = j.clone();
                         j_new.set_prev(j.get_next());
-                        // In theory this unwrap should not fail because we peek into the iterator above
-                        // and if it's empty we continue the loop without requeueing
-                        j_new.set_next(j.get_schedule().after(&DateTime::from(time::SystemTime::now() + time::Duration::from_secs(1))).next().unwrap());
+                        // This unwrap should fail in theory as we are checking `is_some` above
+                        j_new.set_next(j.get_schedule().after(&time_diff).next().unwrap());
                         debug!("New Job: {:?}", j_new);
                         self.job_list.enqueue(j_new);
                     }
