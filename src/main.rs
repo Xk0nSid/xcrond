@@ -7,7 +7,7 @@ fn main() {
         std::process::exit(0);
     }).expect("Failed to set SIGINT handler");
 
-    let mut c = Cron::new();
+    let mut c = Cron::default();
     c.init();
     c.run();
 }

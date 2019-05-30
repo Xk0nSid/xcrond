@@ -16,20 +16,13 @@ use std::time;
 use job::Job;
 use event::EventQueue;
 
+#[derive(Default)]
 pub struct Cron {
     job_list: EventQueue,
     wakeup_after: time::Duration,
 }
 
 impl Cron {
-    /// Create a new instance of Cron struct
-    pub fn new() -> Self {
-        Cron {
-            job_list: EventQueue::new(),
-            wakeup_after: time::Duration::new(0, 0),
-        }
-    }
-
     /// Initialize the cron instance.
     /// This function reads all schedule files and prepares
     /// all the necessary data structures for proper operations.

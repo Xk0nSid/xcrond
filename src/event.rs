@@ -53,14 +53,12 @@ impl Event {
     }
 }
 
+#[derive(Default)]
 pub struct EventQueue {
     queue: Vec<Event>,
 }
 
 impl EventQueue {
-    pub fn new() -> Self {
-        EventQueue { queue: vec![] }
-    }
 
     pub fn enqueue(&mut self, j: Job) {
         if self.queue.is_empty() {

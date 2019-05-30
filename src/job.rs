@@ -30,7 +30,7 @@ impl Job {
             cmd,
             next,
             expression: expr.to_string(),
-            schedule: schedule,
+            schedule,
             prev: Local::now(),
             params: p,
         }
