@@ -17,6 +17,8 @@ $ git clone https://github.com/xk0nsid/xcrond
 $ cd xcrond
 $ cargo build --release
 $ ./target/release/xcrond
+$ # If you wanna see logs
+$ RUST_LOG=info ./target/release/xcrond
 ```
 
 ### TODOS
@@ -25,6 +27,6 @@ $ ./target/release/xcrond
 - [x] Add `prev` and `next` exec time to `Job`
 - [x] Change `time` type of `Event` from `u32` to actual time type
 - [x] Add main cron loop
-- [x] Add forking and re-scheduling logic
+- [x] Add forking and re-scheduling logic (Scheduling provided by [this](https://github.com/xk0nsid/cron) repo.)
 - [ ] Add crond config (this is config for server)
 - [ ] Add cron scheduling config support (this is config for defining cron schedules)
