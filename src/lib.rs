@@ -1,11 +1,11 @@
 #[macro_use]
 extern crate log;
 
-mod job;
 mod event;
+mod job;
 
-use chrono::Local;
 use chrono::DateTime;
+use chrono::Local;
 use env_logger::{Builder, Target};
 use log::{error, info};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
@@ -13,8 +13,8 @@ use nix::unistd::{execv, fork, getpid, ForkResult, Pid};
 use std::thread;
 use std::time;
 
-use job::Job;
 use event::EventQueue;
+use job::Job;
 
 #[derive(Default)]
 pub struct Cron {
@@ -30,34 +30,41 @@ impl Cron {
     /// in this function.
     pub fn init(&mut self) {
         // 1. TODO: Read cron job files
-        // Cron's `Jobsfile` format
-        // - Job 1:
-        //     - cmd: /usr/bin/touch /tmp/1
-        //     - schedule: 0 0/1 * * * *
-        // - Job 2:
-        //     - cmd: /usr/bin/touch /tmp/2
-        //     - schedule: 0 0/2 * * * *
-        // - Job 3:
-        //     - cmd: /usr/bin/touch /tmp/3
-        //     - schedule: 0 0/3 * * * *
-
         // 2. TODO: Parse each file
         // 3. TODO: Enqueue jobs in job_list
+        //
+        // This is how it should look like
+        //
+        // let joblist = joblist::parse_config();
+        // for j in joblist {
+        //     self.job_list.enqueue(Job::from_cronjob(j));
+        // }
 
         // Initialize logger
+        // TODO: Change this when we can load server config
         let mut log_builder = Builder::from_default_env();
         log_builder.target(Target::Stdout);
         log_builder.init();
 
-        let j1 = Job::new("Job 1".to_string(), "/usr/bin/touch /tmp/1".to_string(), "@minute");
-        let j2 = Job::new("Job 2".to_string(), "/usr/bin/touch /tmp/2".to_string(), "0 0/2 * * * *");
-        let j3 = Job::new("Job 3".to_string(), "/usr/bin/touch /tmp/3".to_string(), "0 0/3 * * * *");
-        let j4 = Job::new("Job 4".to_string(), "/usr/bin/touch /tmp/4".to_string(), "0 58 17 30 May Thu 2019");
+        let j1 = Job::new(
+            "Job 1".to_string(),
+            "/usr/bin/touch /tmp/1".to_string(),
+            "@minute",
+        );
+        let j2 = Job::new(
+            "Job 2".to_string(),
+            "/usr/bin/touch /tmp/2".to_string(),
+            "0 0/2 * * * *",
+        );
+        let j3 = Job::new(
+            "Job 3".to_string(),
+            "/usr/bin/touch /tmp/3".to_string(),
+            "0 0/3 * * * *",
+        );
 
-        self.job_list.enqueue(j1);
-        self.job_list.enqueue(j2);
-        self.job_list.enqueue(j3);
-        self.job_list.enqueue(j4);
+        self.job_list.enqueue(j1.unwrap());
+        self.job_list.enqueue(j2.unwrap());
+        self.job_list.enqueue(j3.unwrap());
     }
 
     /// This starts the actual cron server
@@ -68,13 +75,22 @@ impl Cron {
         loop {
             self.job_list.debug_print();
 
-            // Check if there is any thing in the queue
+            // Try to dequeue
             let top = match self.job_list.dequeue() {
                 Some(t) => t,
                 None => {
-                    // if queue is empty, sleep for a minute and try again
-                    thread::sleep(time::Duration::from_secs(60));
-                    continue;
+                    // Shutdown server
+                    // Why?
+                    // Because if queue is empty, it means no jobs are scheduled.
+                    // After adding job(s) to Jobfile, the server has to be restarted
+                    // which will popluate the queue automatically. So, if queue
+                    // is empty, then it will remain empty until next server restart.
+                    //
+                    // This will change when we add support for runtime population of queue.
+                    // Till then we can simply shutdown the server, as it's basically of
+                    // no use if the queue is empty.
+                    info!("There are no jobs to execute");
+                    break;
                 }
             };
 
@@ -82,7 +98,11 @@ impl Cron {
             let wakeup_after = match top.get_time().signed_duration_since(Local::now()).to_std() {
                 Ok(t) => t,
                 Err(err) => {
-                    error!("Failed to calculate time difference for time {}: {}", top.get_time(), err);
+                    error!(
+                        "Failed to calculate time difference for time {}: {}",
+                        top.get_time(),
+                        err
+                    );
                     thread::sleep(time::Duration::from_secs(60));
                     continue;
                 }
@@ -103,7 +123,7 @@ impl Cron {
                         // 5. execve job on forked process
                         match execv(path, &j.get_params()[..]) {
                             Ok(_) => {
-                                info!("Ran job {} in process {}", j.get_name(), getpid());
+                                info!("[{}] Launched process {}", j.get_name(), getpid());
                             }
                             Err(err) => {
                                 error!("Failed to execute `{:?}` in pid `{}`: {:?}", path, getpid(), err);
@@ -111,7 +131,7 @@ impl Cron {
                         }
                     }
                     Ok(ForkResult::Parent {child}) => {
-                        info!("Spawned child {} for job {}", child, j.get_name());
+                        info!("[{}] Spawned child {}", j.get_name(), child);
 
                         let time_diff = DateTime::from(time::SystemTime::now() + time::Duration::from_secs(1));
 
@@ -146,9 +166,10 @@ impl Cron {
                     WaitStatus::Stopped(pid, signal) => {
                         info!("[Reaper] Process {} stopped by signal {:?}", pid, signal)
                     }
-                    WaitStatus::Signaled(pid, signal, _) => {
-                        info!("[Reaper] Process {} signaled to stop with {:?}", pid, signal)
-                    }
+                    WaitStatus::Signaled(pid, signal, _) => info!(
+                        "[Reaper] Process {} signaled to stop with {:?}",
+                        pid, signal
+                    ),
                     _ => {
                         info!("[Reaper] Wait Signal: {:?}", s);
                         thread::sleep(time::Duration::from_secs(60));

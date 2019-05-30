@@ -1,7 +1,6 @@
 use chrono::{DateTime, Local};
 use cron::Schedule;
-use std::{str::FromStr, ffi::CString};
-
+use std::{ffi::CString, str::FromStr};
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct Job {
@@ -15,17 +14,30 @@ pub struct Job {
 }
 
 impl Job {
-    pub fn new(name: String, cmd: String, expr: &str) -> Self {
+    pub fn new(name: String, cmd: String, expr: &str) -> Option<Self> {
         // Build params
         let mut p: Vec<CString> = vec![];
         for a in cmd.split(' ') {
             p.push(CString::new(a).unwrap());
         }
 
-        let schedule = Schedule::from_str(expr).unwrap();
-        let next = schedule.upcoming(Local).next().unwrap();
+        let schedule = match Schedule::from_str(expr) {
+            Ok(t) => t,
+            Err(err) => {
+                error!("[{}] Invalid schedule: {}", name, err);
+                return None;
+            }
+        };
 
-        Job {
+        let next = match schedule.upcoming(Local).next() {
+            Some(t) => t,
+            None => {
+                error!("[{}] Failed to calculate upcoming schedule", name);
+                return None;
+            }
+        };
+
+        Some(Job {
             name,
             cmd,
             next,
@@ -33,7 +45,7 @@ impl Job {
             schedule,
             prev: Local::now(),
             params: p,
-        }
+        })
     }
 
     /// Getters
@@ -68,6 +80,6 @@ impl Job {
 
 impl std::fmt::Debug for Job {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Job: {} ({})", self.name, self.next)
+        write!(f, "Job({} -> {})", self.name, self.next)
     }
 }

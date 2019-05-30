@@ -1,6 +1,6 @@
-use chrono::{Local, DateTime};
-use std::cmp::Ordering;
 use crate::job::Job;
+use chrono::{DateTime, Local};
+use std::cmp::Ordering;
 
 #[derive(Eq, Clone)]
 pub struct Event {
@@ -59,7 +59,6 @@ pub struct EventQueue {
 }
 
 impl EventQueue {
-
     pub fn enqueue(&mut self, j: Job) {
         if self.queue.is_empty() {
             let mut e = Event::new(j.get_next());
@@ -74,7 +73,10 @@ impl EventQueue {
             // This is done because we want the binary search to work in reverse order
             // rather than traditional order because we are maintainig the queue
             // in reverse order
-            match self.queue.binary_search_by(|probe| j.get_next().cmp(&probe.time)) {
+            match self
+                .queue
+                .binary_search_by(|probe| j.get_next().cmp(&probe.time))
+            {
                 Ok(pos) => {
                     // Already in the vector
                     self.queue[pos].push_job(j);

@@ -5,7 +5,8 @@ fn main() {
     ctrlc::set_handler(move || {
         println!("Terminate signal received. Exiting.");
         std::process::exit(0);
-    }).expect("Failed to set SIGINT handler");
+    })
+    .expect("Failed to set SIGINT handler");
 
     let mut c = Cron::default();
     c.init();
