@@ -29,4 +29,7 @@ $ RUST_LOG=info ./target/release/xcrond
 - [x] Add main cron loop
 - [x] Add forking and re-scheduling logic (Scheduling provided by [this](https://github.com/xk0nsid/cron) repo.)
 - [ ] Add crond config (this is config for server)
-- [ ] Add cron scheduling config support (this is config for defining cron schedules)
+- [ ] Add cron scheduling config support (this is config for defining cron
+      schedules) via a `Jobfile`. An example `Jobfile` is provided in this repo.
+- [ ] Add individual user's `Jobfile` support
+- [ ] Execute jobs based on `user` permission
