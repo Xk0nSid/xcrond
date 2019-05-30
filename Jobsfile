@@ -1,0 +1,16 @@
+###############################
+#         Jobsfile            #
+###############################
+
+# Add Jobs below in the format of YAML
+
+# Example Jobs
+# - Job 1:
+#   - cmd: /usr/bin/touch /tmp/1
+#   - schedule: 0 0/1 * * * *
+# - Job 2:
+#   - cmd: /usr/bin/touch /tmp/2
+#   - schedule: 0 0/2 * * * *
+# - Job 1:
+#   - cmd: /usr/bin/touch /tmp/3
+#   - schedule: 0 0/3 * * * *
